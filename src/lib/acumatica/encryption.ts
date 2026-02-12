@@ -5,9 +5,14 @@ const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
-  const key = process.env.CREDENTIALS_ENCRYPTION_KEY;
+  const key = process.env.CREDENTIALS_ENCRYPTION_KEY?.trim();
   if (!key) {
     throw new Error("CREDENTIALS_ENCRYPTION_KEY environment variable is not set");
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error(
+      `CREDENTIALS_ENCRYPTION_KEY must be a 64-character hex string (32 bytes). Got ${key.length} characters.`
+    );
   }
   return Buffer.from(key, "hex");
 }
