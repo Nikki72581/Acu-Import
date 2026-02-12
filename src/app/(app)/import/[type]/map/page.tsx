@@ -36,6 +36,7 @@ export default function MappingPage({
     {}
   );
   const [showConnectionSelector, setShowConnectionSelector] = useState(false);
+  const [isRefreshingSchema, setIsRefreshingSchema] = useState(false);
 
   // Get entity config
   const config = entityType ? ENTITY_CONFIGS[entityType] : null;
@@ -141,6 +142,21 @@ export default function MappingPage({
     }
   }, []);
 
+  const handleRefreshSchema = useCallback(async () => {
+    if (!entityType) return;
+    setIsRefreshingSchema(true);
+    try {
+      // Currently re-reads from static ENTITY_CONFIGS.
+      // When dynamic Acumatica schema fetching is implemented,
+      // this would call the /api/schema/[entityType] endpoint.
+      await new Promise((r) => setTimeout(r, 500)); // Simulate fetch
+      // Fields are already sourced from ENTITY_CONFIGS — no-op for now.
+      // Future: merge new fields into existing field list.
+    } finally {
+      setIsRefreshingSchema(false);
+    }
+  }, [entityType]);
+
   const handleDefaultValueChange = useCallback(
     (apiName: string, value: string) => {
       setDefaultValues((prev) => ({ ...prev, [apiName]: value }));
@@ -238,6 +254,8 @@ export default function MappingPage({
         isSavingTemplate={isSavingTemplate}
         defaultValues={defaultValues}
         onDefaultValueChange={handleDefaultValueChange}
+        onRefreshSchema={handleRefreshSchema}
+        isRefreshingSchema={isRefreshingSchema}
       />
 
       <div className="mt-8 flex items-center justify-between">

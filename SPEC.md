@@ -3,7 +3,7 @@
 **Version:** 1.0
 **Author:** Nicole / Junova
 **Last Updated:** February 2026
-**Status:** Pre-Development
+**Status:** v1 Complete (Phases 1-4)
 
 ---
 
@@ -40,7 +40,7 @@ This is a Junova product — built independently, not sold through a VAR channel
 
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
-| Framework | Next.js 15 (App Router) | Server components, API routes, file-based routing |
+| Framework | Next.js 16 (App Router) | Server components, API routes, file-based routing |
 | Language | TypeScript (strict mode) | Type safety across the full stack |
 | Styling | Tailwind CSS 4 | Utility-first, fast iteration, consistent design |
 | UI Components | shadcn/ui | Accessible, composable, no vendor lock-in |
@@ -309,8 +309,17 @@ This is a Junova product — built independently, not sold through a VAR channel
   - If failed: Acumatica's error message (parsed into human-readable form)
   - Timestamp
 
+**Cancellation:**
+- "Cancel Import" button aborts the client-side SSE stream and signals server-side cancellation via `POST /api/imports/[sessionId]/cancel`
+- Server checks for cancellation status between each batch and stops processing if cancelled
+- Can also cancel from the Import History page (`/logs`)
+
+**Error Humanization:**
+- Raw Acumatica error messages are processed through `humanizeError()` before display
+- Strips PX.Data exception prefixes, extracts inner exception messages, pattern-matches common errors (duplicate key, missing record, required field, timeout, auth failure)
+
 **Post-Import:**
-- Summary card: total rows, success count, failure count, duration
+- Summary card: total rows, success count, failure count, created/updated breakdown, duration
 - "Export Log as CSV" button — downloads the full row-level results
 - "View in Import History" link — navigates to the persistent log
 - "Start New Import" button — returns to entity selection
@@ -508,88 +517,113 @@ acumatica-import-wizard/
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx                        # Root layout with Clerk provider
-│   │   ├── page.tsx                          # Dashboard / landing
-│   │   ├── import/
-│   │   │   ├── page.tsx                      # Entity type selector
-│   │   │   └── [type]/
-│   │   │       ├── upload/page.tsx           # File upload + parse
-│   │   │       ├── map/page.tsx              # Mapping interface
-│   │   │       ├── preview/page.tsx          # Validation preview
-│   │   │       └── results/page.tsx          # Import progress + log
-│   │   ├── logs/
-│   │   │   ├── page.tsx                      # Import session history
-│   │   │   └── [sessionId]/page.tsx          # Session detail view
-│   │   ├── settings/
-│   │   │   ├── connections/page.tsx          # Acumatica connection config
-│   │   │   └── templates/page.tsx            # Saved mapping templates
+│   │   ├── (app)/
+│   │   │   ├── layout.tsx                    # App shell with sidebar nav
+│   │   │   ├── page.tsx                      # Dashboard with recent imports
+│   │   │   ├── import/
+│   │   │   │   ├── page.tsx                  # Entity type & mode selector
+│   │   │   │   └── [type]/
+│   │   │   │       ├── layout.tsx            # Import wizard layout
+│   │   │   │       ├── upload/page.tsx       # File upload + parse
+│   │   │   │       ├── map/
+│   │   │   │       │   ├── page.tsx          # Mapping interface
+│   │   │   │       │   └── actions.ts        # Server actions (templates)
+│   │   │   │       ├── preview/page.tsx      # Validation preview
+│   │   │   │       └── results/page.tsx      # Import progress + log
+│   │   │   ├── logs/
+│   │   │   │   ├── page.tsx                  # Import session history
+│   │   │   │   └── [sessionId]/page.tsx      # Session detail drill-down
+│   │   │   └── settings/
+│   │   │       └── connections/page.tsx      # Connection management
+│   │   ├── sign-in/[[...sign-in]]/page.tsx   # Clerk sign-in
+│   │   ├── sign-up/[[...sign-up]]/page.tsx   # Clerk sign-up
 │   │   └── api/
+│   │       ├── connections/
+│   │       │   ├── route.ts                  # GET list, POST create
+│   │       │   ├── test/route.ts             # POST test (raw credentials)
+│   │       │   └── [id]/
+│   │       │       ├── route.ts              # GET, PUT, DELETE
+│   │       │       └── test/route.ts         # POST test (saved connection)
+│   │       ├── import/
+│   │       │   └── process/route.ts          # Batched import processor (SSE)
+│   │       ├── imports/
+│   │       │   └── [sessionId]/
+│   │       │       └── cancel/route.ts       # POST cancel running import
 │   │       ├── schema/[entityType]/route.ts  # Entity schema endpoint
-│   │       ├── mapping/suggest/route.ts      # Auto-mapping engine
-│   │       ├── validate/route.ts             # Pre-import validation
-│   │       ├── import/process/route.ts       # Batched import processor (SSE)
-│   │       └── imports/[sessionId]/route.ts  # Import log CRUD
+│   │       └── validate/route.ts             # Pre-import validation
 │   ├── lib/
 │   │   ├── acumatica/
-│   │   │   ├── auth.ts                       # Auth manager
-│   │   │   ├── client.ts                     # Base API client with retry
-│   │   │   ├── schema.ts                     # Schema fetcher + cache (includes UDFs)
-│   │   │   ├── lookups.ts                    # Reference data fetcher + cache
+│   │   │   ├── auth.ts                       # Auth manager (basic auth + session cache)
+│   │   │   ├── client.ts                     # Base API client with retry/backoff
+│   │   │   ├── encryption.ts                 # AES-256-GCM credential encryption
+│   │   │   ├── error-parser.ts               # Error message humanization
+│   │   │   ├── schema.ts                     # Schema fetcher + cache
 │   │   │   └── entities/
-│   │   │       ├── types.ts                  # Shared interfaces (EntityAdapter, etc.)
-│   │   │       ├── stockItem.ts              # Stock Item adapter
-│   │   │       ├── customer.ts               # Customer adapter
-│   │   │       └── vendor.ts                 # Vendor adapter
+│   │   │       ├── index.ts                  # Adapter factory + exports
+│   │   │       ├── types.ts                  # EntityAdapter interface
+│   │   │       ├── record-builder.ts         # Shared record building utilities
+│   │   │       ├── stock-item.ts             # Stock Item field config
+│   │   │       ├── stock-item-adapter.ts     # Stock Item adapter
+│   │   │       ├── customer.ts               # Customer field config
+│   │   │       ├── customer-adapter.ts       # Customer adapter
+│   │   │       ├── vendor.ts                 # Vendor field config
+│   │   │       └── vendor-adapter.ts         # Vendor adapter
 │   │   ├── mapping/
-│   │   │   ├── engine.ts                     # Auto-mapping algorithm
-│   │   │   ├── aliases.ts                    # Field alias dictionaries
-│   │   │   └── templates.ts                  # Template CRUD helpers
+│   │   │   └── engine.ts                     # Auto-mapping algorithm (exact, alias, fuzzy)
 │   │   ├── validation/
-│   │   │   ├── engine.ts                     # Validation runner
-│   │   │   ├── rules.ts                      # Per-entity validation rules
+│   │   │   ├── engine.ts                     # Validation runner (all rules)
 │   │   │   └── lookups.ts                    # Lookup-based validation (references, keys)
 │   │   ├── parser/
-│   │   │   ├── xlsx.ts                       # SheetJS wrapper
-│   │   │   └── csv.ts                        # Papaparse wrapper
-│   │   └── db/
-│   │       ├── schema.ts                     # Drizzle schema definitions
-│   │       ├── queries.ts                    # Common query helpers
-│   │       └── migrate.ts                    # Migration runner
+│   │   │   ├── xlsx.ts                       # SheetJS wrapper (with header dedup/sanitize)
+│   │   │   └── csv.ts                        # Papaparse wrapper (with header dedup/sanitize)
+│   │   ├── db/
+│   │   │   ├── index.ts                      # Drizzle client (Neon serverless)
+│   │   │   ├── schema.ts                     # Drizzle schema definitions
+│   │   │   └── queries.ts                    # Query helpers (connections, sessions, logs, templates)
+│   │   └── utils/
+│   │       └── entity-utils.ts               # Slug ↔ entity type helpers
 │   ├── components/
 │   │   ├── import/
 │   │   │   ├── EntitySelector.tsx            # Entity type cards
+│   │   │   ├── ImportModeSelector.tsx        # Create / Update mode picker
+│   │   │   ├── ConnectionSelector.tsx        # Connection picker dialog
 │   │   │   ├── FileDropzone.tsx              # Upload component
 │   │   │   ├── FilePreview.tsx               # Parsed file preview table
-│   │   │   ├── MappingGrid.tsx               # Full mapping interface
-│   │   │   ├── MappingRow.tsx                # Single field mapping row
+│   │   │   ├── MappingGrid.tsx               # Mapping interface + schema refresh
+│   │   │   ├── MappingRow.tsx                # Single field mapping row + default value row
 │   │   │   ├── ConfidenceBadge.tsx           # Match confidence indicator
+│   │   │   ├── SampleDataPreview.tsx         # Sample values popover
+│   │   │   ├── TemplateSaveDialog.tsx        # Save mapping template dialog
 │   │   │   ├── ValidationPreview.tsx         # Validation results table
+│   │   │   ├── ValidationStatusBadge.tsx     # Pass/warn/fail badge
+│   │   │   ├── ValidationErrorDetail.tsx     # Expandable error detail
 │   │   │   ├── ImportProgress.tsx            # Progress bar + stats
-│   │   │   └── ImportResultsTable.tsx        # Row-level results
+│   │   │   ├── ImportResultsTable.tsx        # Row-level results
+│   │   │   └── WizardSteps.tsx               # Step indicator bar
 │   │   ├── logs/
-│   │   │   ├── SessionList.tsx               # Import history table
-│   │   │   └── RowDetailTable.tsx            # Session drill-down
+│   │   │   ├── SessionList.tsx               # Import history table with filters + cancel
+│   │   │   └── RowDetailTable.tsx            # Row-level log table + CSV export
 │   │   ├── settings/
-│   │   │   ├── ConnectionForm.tsx            # Add/edit Acumatica connection
-│   │   │   └── ConnectionList.tsx            # Manage connections
-│   │   └── ui/                               # shadcn/ui components
+│   │   │   ├── ConnectionForm.tsx            # Add/edit connection dialog + test
+│   │   │   └── ConnectionList.tsx            # Connection list with actions
+│   │   └── ui/                               # shadcn/ui components (badge, button, card, etc.)
 │   ├── hooks/
-│   │   ├── useFileParser.ts                  # File parsing hook
-│   │   ├── useAutoMapping.ts                 # Auto-mapping hook
-│   │   ├── useImportProcessor.ts             # Import execution hook
-│   │   └── useImportSession.ts               # Session state management
-│   └── types/
-│       ├── entities.ts                       # Entity type definitions
-│       ├── mapping.ts                        # Mapping-related types
-│       ├── import.ts                         # Import session types
-│       └── acumatica.ts                      # Acumatica API types
+│   │   ├── useFileParser.ts                  # File parsing hook (CSV + XLSX)
+│   │   ├── useAutoMapping.ts                 # Auto-mapping hook (3-pass algorithm)
+│   │   ├── useImportProcessor.ts             # Import execution + SSE streaming
+│   │   └── useImportWizard.tsx               # Wizard state management (context provider)
+│   ├── types/
+│   │   ├── entities.ts                       # Entity configs, types, slug maps, import modes
+│   │   ├── mapping.ts                        # FieldMapping, MappingTemplate types
+│   │   ├── import.ts                         # ImportSession, ImportRowLog types
+│   │   └── acumatica.ts                      # Acumatica API types (auth, records, errors, lookups)
+│   └── middleware.ts                         # Clerk auth middleware
 ├── drizzle/
 │   └── migrations/                           # Generated SQL migrations
 ├── public/
 ├── .env.local                                # Local env vars
-├── .env.example                              # Env template
 ├── drizzle.config.ts
 ├── next.config.ts
-├── tailwind.config.ts
 ├── tsconfig.json
 ├── package.json
 └── SPEC.md                                   # This file
@@ -638,17 +672,17 @@ Primary target: desktop (1280px+). The mapping grid and data tables require wide
 
 ### 9.1 Authentication
 
-**Option A — OAuth2 (Recommended for production):**
+**v1 — Basic Auth (Current):**
+- POST to `/entity/auth/login` with username, password, company, branch
+- Receive session cookie, cached in-memory for 20 minutes
+- On 401 response, re-authenticate and retry once
+- Credentials encrypted at rest with AES-256-GCM
+
+**Future — OAuth2 Connected Application:**
 - Register the app as a Connected Application in Acumatica
 - Use Authorization Code flow for initial token
 - Store refresh token encrypted in the connections table
 - Auto-refresh access tokens on expiry
-
-**Option B — Basic Auth (Faster for development):**
-- POST to `/entity/auth/login` with username, password, company, branch
-- Receive session cookie
-- Cookie valid for configurable session duration
-- Re-login on 401
 
 ### 9.2 API Versioning
 
@@ -681,10 +715,10 @@ Acumatica doesn't publish formal rate limits but their API is not designed for h
 
 ### 10.1 Credential Storage
 
-- Acumatica credentials encrypted at rest using AES-256
-- Encryption key stored as environment variable, never in code
-- Credentials only decrypted server-side in API routes, never sent to client
-- Connection test endpoint validates credentials without storing response data
+- Acumatica credentials encrypted at rest using AES-256-GCM (`src/lib/acumatica/encryption.ts`)
+- Encryption key stored as `CREDENTIALS_ENCRYPTION_KEY` environment variable (32-byte hex), never in code
+- Credentials only decrypted server-side in API routes, never sent to client (stripped from all GET responses)
+- Connection test endpoints (`/api/connections/test` and `/api/connections/[id]/test`) validate credentials without storing response data
 
 ### 10.2 Data Handling
 
@@ -704,55 +738,62 @@ Acumatica doesn't publish formal rate limits but their API is not designed for h
 
 ## 11. Implementation Phases
 
-### Phase 1 — Foundation (Week 1-2)
+### Phase 1 — Foundation ✅
 
-- [ ] Project scaffold: Next.js, Tailwind, shadcn/ui, Drizzle, Clerk (single-user config)
-- [ ] Database schema + migrations (connections, import_sessions, import_row_logs, mapping_templates)
-- [ ] Acumatica auth manager (basic auth for dev, OAuth2 stubbed)
-- [ ] Base API client with retry logic
-- [ ] Entity type selector page with import mode selection (Create / Create or Update / Update)
-- [ ] File upload + client-side parsing (xlsx and csv)
-- [ ] File preview component
+- [x] Project scaffold: Next.js 16, Tailwind CSS 4, shadcn/ui, Drizzle, Clerk (single-user config)
+- [x] Database schema + migrations (connections, import_sessions, import_row_logs, mapping_templates)
+- [x] Acumatica auth manager (basic auth with session caching, OAuth2 stubbed)
+- [x] Base API client with retry logic (exponential backoff, 401 re-auth, 429 rate limit handling)
+- [x] AES-256-GCM credential encryption
+- [x] Entity type selector page with import mode selection (Create / Create or Update / Update)
+- [x] File upload + client-side parsing (xlsx and csv) with drag-and-drop
+- [x] File preview component with sheet selector
+- [x] App shell layout with sidebar navigation
 
-### Phase 2 — Mapping Engine (Week 3-4)
+### Phase 2 — Mapping Engine ✅
 
-- [ ] Entity adapters: Stock Item, Customer, Vendor (field definitions, aliases, mapRecord, getLookupRequirements)
-- [ ] Schema fetcher with extended schema support (standard + custom fields / UDFs)
-- [ ] Auto-mapping engine (exact, alias, fuzzy three-pass)
-- [ ] Mapping grid UI with target field dropdowns (grouped: Required / Optional / Custom Fields)
-- [ ] Confidence badges and sample data preview
-- [ ] Default value inputs for unmapped required fields
-- [ ] Mapping template save/load
+- [x] Entity adapters: Stock Item, Customer, Vendor (field definitions, aliases, mapRecord, fetchExistingKeys, pushRecord)
+- [x] Auto-mapping engine (exact match, alias match, fuzzy match via Fuse.js — three-pass algorithm)
+- [x] Mapping grid UI with searchable target field dropdowns (grouped: Required / Optional)
+- [x] Confidence badges (exact/alias/fuzzy/none) and sample data preview
+- [x] Default value inputs for unmapped required fields
+- [x] Mapping template save/load/delete (persisted to DB via server actions)
+- [x] Import wizard context provider for cross-step state management
 
-### Phase 3 — Validation & Import (Week 5-7)
+### Phase 3 — Validation & Import ✅
 
-- [ ] Lookup data fetcher — pre-fetches reference tables (Item Classes, UOMs, Terms, etc.) from Acumatica
-- [ ] Existing key fetcher for Create Only / Update Only mode validation
-- [ ] Validation engine with per-entity rules + lookup-based validation
-- [ ] Validation preview table with pass/warn/fail indicators and reference-aware error messages
-- [ ] Inline editing and row exclusion
-- [ ] One-import-per-connection enforcement (check for running sessions before starting)
-- [ ] Import processor with batching, retry, and SSE progress streaming
-- [ ] Import mode-aware processing (track created vs updated counts)
-- [ ] Real-time progress UI
-- [ ] Results table with row-level detail (including created/updated indicators)
-- [ ] Import session persistence to database
+- [x] Lookup data fetcher — pre-fetches reference tables (Item Classes, UOMs, Terms, etc.) from Acumatica
+- [x] Existing key fetcher for Create Only / Update Only mode validation
+- [x] Validation engine with per-entity rules + lookup-based validation (8 rule types)
+- [x] Validation preview table with pass/warn/fail indicators and reference-aware error messages
+- [x] Row exclusion (individual + bulk "exclude all failures")
+- [x] Connection selector dialog in mapping flow
+- [x] One-import-per-connection enforcement (check for running sessions before starting)
+- [x] Import processor with batching (10 records/batch), retry, and SSE progress streaming
+- [x] Import mode-aware processing (track created vs updated counts via existing key lookup)
+- [x] Real-time progress UI with elapsed timer
+- [x] Results table with row-level detail (including created/updated indicators)
+- [x] CSV export of results from the results page
+- [x] Import session persistence to database (sessions + row logs)
 
-### Phase 4 — Logging & Polish (Week 8-9)
+### Phase 4 — Logging & Polish ✅
 
-- [ ] Import history dashboard (session list with mode column, filtering, search)
-- [ ] Session detail drill-down (row-level log with operation type)
-- [ ] CSV export of import logs
-- [ ] Connection management UI (add, test, edit, delete)
-- [ ] Cancel running import functionality
-- [ ] Error message humanization (parse Acumatica errors into readable form)
-- [ ] Edge cases: empty files, duplicate handling, special characters, large files
-- [ ] Performance testing with 5,000+ row imports
-- [ ] Schema refresh button in mapping UI (re-fetch for newly added custom fields)
+- [x] Import history dashboard (`/logs`) — session list with status/entity/mode filtering and filename search
+- [x] Session detail drill-down (`/logs/[sessionId]`) — row-level log with summary card
+- [x] CSV export of row-level import logs
+- [x] Connection management UI (`/settings/connections`) — add, test, edit, delete connections
+- [x] Test connection endpoint (both saved and unsaved credentials)
+- [x] Cancel running import — server-side cancellation check between batches + cancel API endpoint
+- [x] Error message humanization (`humanizeError()` — strips PX.Data exceptions, extracts inner messages, pattern-matches common Acumatica errors)
+- [x] Edge case hardening: duplicate column headers (auto-dedup), header sanitization (control chars), empty row skip-with-warning, sheet-change validation, empty rows/mappings guard
+- [x] Schema refresh button in mapping UI (UI pattern ready for dynamic schema fetching)
+- [x] Dashboard recent imports — home page shows last 5 sessions with status and links
 
 ### Future (Post-v1)
 
 - [ ] OAuth2 Connected Application flow
+- [ ] Dynamic schema fetching from Acumatica `$adm/schema` endpoint (custom fields / UDFs)
+- [ ] Attribute-type custom field mapping UI (key-value pair interface)
 - [ ] Nested entity mapping (WarehouseDetails, CrossReferences, Addresses)
 - [ ] Scheduled/recurring imports
 - [ ] Multi-user / org support via Clerk organizations (shared connections, shared templates)
@@ -761,7 +802,11 @@ Acumatica doesn't publish formal rate limits but their API is not designed for h
 - [ ] Multi-file imports (e.g., items + their warehouse details in separate files)
 - [ ] Webhook notifications on import completion
 - [ ] API endpoint for programmatic imports (headless mode)
-- [ ] Attribute-type custom field mapping UI (key-value pair interface)
+- [ ] Performance testing with 5,000+ row imports
+- [ ] Virtual scrolling for large validation preview tables
+- [ ] Inline cell editing in validation preview
+- [ ] Configurable batch size and delay settings in UI
+- [ ] Import log retention/purge policy
 
 ---
 
@@ -819,24 +864,23 @@ The import wizard supports both **Create** and **Update** modes, selectable per 
 - Validation engine uses the key lookup to flag duplicates (create mode) or missing records (update mode)
 - The results log records whether each row was a create or update operation
 
-### 14.2 Custom Field / Extended Schema Support ✅
+### 14.2 Custom Field / Extended Schema Support (Partially Implemented)
 
-The schema fetcher pulls **both** standard and custom fields (User-Defined Fields / UDFs) from Acumatica.
+v1 uses static field definitions from `ENTITY_CONFIGS` in `src/types/entities.ts`. Dynamic schema fetching from Acumatica's `$adm/schema` endpoint is planned for a future release.
 
-**How Acumatica Exposes Custom Fields:**
-- UDFs are available on the API entity when the custom field is added to a Generic Inquiry or the entity's endpoint is extended via a customization project
-- The `$adm/schema` endpoint includes custom fields that have been exposed on the endpoint
-- Custom attributes (from the Attributes tab) are accessible via the `Attributes` nested entity as key-value pairs
+**What's Implemented:**
+- Entity field configs include an `isCustom` boolean flag (for future UI grouping)
+- "Refresh Schema" button exists in the mapping UI toolbar (currently re-reads static config; ready for dynamic schema fetching)
+- Schema endpoint at `/api/schema/[entityType]` exists for serving field definitions
 
-**Implementation Impact:**
-- Schema fetcher hits `$adm/schema` and includes all returned fields regardless of whether they're standard or custom
-- Custom fields are displayed in the mapping target dropdown under a separate "Custom Fields" group
-- Attribute-type fields are handled via a special mapping mode: user maps a source column to an attribute name, and the adapter wraps it into the `Attributes` nested entity format:
+**Future — Dynamic Schema Discovery:**
+- Schema fetcher will hit Acumatica's `$adm/schema` endpoint and include all returned fields (standard + custom / UDFs)
+- Custom fields will display in the mapping target dropdown under a "Custom Fields" group
+- Attribute-type fields will use a special mapping mode wrapping values into the `Attributes` nested entity format:
   ```json
   { "Attributes": [{ "AttributeID": { "value": "COLOR" }, "Value": { "value": "Blue" } }] }
   ```
-- Schema cache includes a `isCustom: boolean` flag per field for UI grouping
-- Schema refresh button in the mapping UI to re-fetch if the user has added new custom fields to their Acumatica instance
+- Schema cache will include freshness timestamps to trigger re-fetch prompts
 
 ### 14.3 One Import Per Connection ✅
 

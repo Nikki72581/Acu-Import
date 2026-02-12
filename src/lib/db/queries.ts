@@ -101,6 +101,56 @@ export async function getRunningSessionByConnection(connectionId: string) {
   return results[0] ?? null;
 }
 
+export async function getImportSessionsWithConnection(userId: string) {
+  return db
+    .select({
+      id: importSessions.id,
+      userId: importSessions.userId,
+      connectionId: importSessions.connectionId,
+      entityType: importSessions.entityType,
+      mode: importSessions.mode,
+      fileName: importSessions.fileName,
+      totalRows: importSessions.totalRows,
+      successCount: importSessions.successCount,
+      failCount: importSessions.failCount,
+      warningCount: importSessions.warningCount,
+      createdCount: importSessions.createdCount,
+      updatedCount: importSessions.updatedCount,
+      status: importSessions.status,
+      startedAt: importSessions.startedAt,
+      completedAt: importSessions.completedAt,
+      durationMs: importSessions.durationMs,
+      createdAt: importSessions.createdAt,
+      connectionName: connections.name,
+    })
+    .from(importSessions)
+    .leftJoin(connections, eq(importSessions.connectionId, connections.id))
+    .where(eq(importSessions.userId, userId))
+    .orderBy(desc(importSessions.createdAt));
+}
+
+export async function getRecentImportSessions(userId: string, limit: number = 5) {
+  return db
+    .select({
+      id: importSessions.id,
+      entityType: importSessions.entityType,
+      mode: importSessions.mode,
+      fileName: importSessions.fileName,
+      totalRows: importSessions.totalRows,
+      successCount: importSessions.successCount,
+      failCount: importSessions.failCount,
+      status: importSessions.status,
+      durationMs: importSessions.durationMs,
+      createdAt: importSessions.createdAt,
+      connectionName: connections.name,
+    })
+    .from(importSessions)
+    .leftJoin(connections, eq(importSessions.connectionId, connections.id))
+    .where(eq(importSessions.userId, userId))
+    .orderBy(desc(importSessions.createdAt))
+    .limit(limit);
+}
+
 // --- Import Row Logs ---
 
 export async function createImportRowLog(

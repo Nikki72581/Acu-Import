@@ -42,14 +42,29 @@ export async function parseXlsx(
     return { headers: [], rows: [], selectedSheet: selected, sheetNames };
   }
 
-  const headers = Object.keys(rawData[0]);
+  const rawHeaders = Object.keys(rawData[0]);
 
-  // Convert all values to strings
+  // Sanitize headers — strip control chars, collapse whitespace
+  const sanitized = rawHeaders.map((h) =>
+    h.replace(/[\x00-\x1F\x7F]/g, "").replace(/\s+/g, " ").trim()
+  );
+
+  // Deduplicate headers
+  const seen = new Map<string, number>();
+  const headers = sanitized.map((h) => {
+    const key = h.toLowerCase();
+    const count = seen.get(key) ?? 0;
+    seen.set(key, count + 1);
+    if (count === 0) return h;
+    return `${h} (${count + 1})`;
+  });
+
+  // Convert all values to strings using deduplicated headers
   const rows = rawData.map((row) => {
     const stringRow: Record<string, string> = {};
-    for (const key of headers) {
-      const val = row[key];
-      stringRow[key] = val === null || val === undefined ? "" : String(val);
+    for (let i = 0; i < headers.length; i++) {
+      const val = row[rawHeaders[i]];
+      stringRow[headers[i]] = val === null || val === undefined ? "" : String(val);
     }
     return stringRow;
   });

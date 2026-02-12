@@ -64,6 +64,18 @@ export function validateRows(options: ValidateRowsOptions): RowValidationResult[
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
+    // Skip rows where all cells are empty
+    const allEmpty = Object.values(row).every((v) => !v || !v.trim());
+    if (allEmpty) {
+      results.push({
+        rowIndex: i,
+        status: "warn",
+        errors: [],
+        warnings: [{ field: "_row", message: "Row is entirely empty — will be skipped" }],
+      });
+      continue;
+    }
+
     // Get key value for this row
     const keyValue = keySourceColumn
       ? (row[keySourceColumn]?.trim() || defaultValues[keyField]?.trim() || "")

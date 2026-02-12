@@ -5,6 +5,7 @@ import {
   createImportSession,
   updateImportSession,
   createImportRowLogsBatch,
+  getImportSessionById,
 } from "@/lib/db/queries";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ import { getEntityAdapter } from "@/lib/acumatica/entities";
 import type { EntityType, ImportMode } from "@/types/entities";
 import type { AcumaticaCredentials } from "@/types/acumatica";
 import type { FieldMapping } from "@/types/mapping";
+import { humanizeError } from "@/lib/acumatica/error-parser";
 
 interface ImportRequest {
   connectionId: string;
@@ -52,6 +54,20 @@ export async function POST(request: Request) {
   if (!connectionId || !entityType || !mode || !rows || !mappings) {
     return new Response(
       JSON.stringify({ error: "Missing required fields" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return new Response(
+      JSON.stringify({ error: "No rows to import" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  if (!Array.isArray(mappings) || mappings.length === 0) {
+    return new Response(
+      JSON.stringify({ error: "No field mappings provided" }),
       { status: 400, headers: { "Content-Type": "application/json" } }
     );
   }
@@ -196,12 +212,14 @@ export async function POST(request: Request) {
               failed++;
             }
 
+            const humanizedError = result.error ? humanizeError(result.error) : undefined;
+
             batchResults.push({
               rowIndex,
               keyValue,
               success: result.success,
               operation: result.success ? operation : undefined,
-              error: result.error,
+              error: humanizedError,
             });
 
             rowLogs.push({
@@ -211,7 +229,7 @@ export async function POST(request: Request) {
               status: result.success ? "success" : "failed",
               operation: result.success ? (operation as string) : undefined,
               mappedData: record as unknown as Record<string, unknown>,
-              errorMessage: result.error || undefined,
+              errorMessage: humanizedError || undefined,
               errorCode: result.errorCode || undefined,
             });
           }
@@ -234,8 +252,21 @@ export async function POST(request: Request) {
             batchResults,
           });
 
-          // Delay between batches (except last)
+          // Check for cancellation between batches
           if (i + BATCH_SIZE < rows.length) {
+            const currentSession = await getImportSessionById(sessionId, userId);
+            if (currentSession?.status === "cancelled") {
+              sendEvent("cancelled", {
+                sessionId,
+                message: "Import was cancelled",
+                processed: Math.min(i + BATCH_SIZE, rows.length),
+                succeeded,
+                failed,
+              });
+              return; // controller.close() in finally
+            }
+
+            // Delay between batches
             await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
           }
         }

@@ -135,6 +135,14 @@ export function useFileParser(): UseFileParserReturn {
       const { headers, rows, selectedSheet, sheetNames } =
         await parseXlsx(currentBuffer, sheetName);
 
+      if (headers.length === 0) {
+        throw new Error("No columns found. Check that the sheet has a header row.");
+      }
+
+      if (rows.length === 0) {
+        throw new Error("Sheet has headers but no data rows.");
+      }
+
       if (rows.length > MAX_ROWS) {
         throw new Error(
           `Sheet has ${rows.length.toLocaleString()} rows, which exceeds the ${MAX_ROWS.toLocaleString()} row limit.`

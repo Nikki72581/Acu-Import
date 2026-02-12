@@ -158,6 +158,21 @@ export function useImportProcessor() {
                     sessionId: data.sessionId,
                   },
                 }));
+              } else if (eventType === "cancelled") {
+                setState((prev) => ({
+                  ...prev,
+                  isRunning: false,
+                  error: "Import was cancelled",
+                  summary: {
+                    total: prev.progress.total,
+                    succeeded: data.succeeded ?? prev.progress.succeeded,
+                    failed: data.failed ?? prev.progress.failed,
+                    createdCount: prev.progress.createdCount,
+                    updatedCount: prev.progress.updatedCount,
+                    durationMs: 0,
+                    sessionId: data.sessionId,
+                  },
+                }));
               } else if (eventType === "error") {
                 setState((prev) => ({
                   ...prev,
@@ -191,9 +206,20 @@ export function useImportProcessor() {
     }
   }, []);
 
-  const cancel = useCallback(() => {
+  const cancel = useCallback(async () => {
+    // Abort the client-side stream
     abortRef.current?.abort();
-  }, []);
+
+    // Also signal server-side cancellation if we have a sessionId
+    const sessionId = state.summary?.sessionId;
+    if (sessionId) {
+      try {
+        await fetch(`/api/imports/${sessionId}/cancel`, { method: "POST" });
+      } catch {
+        // Best-effort server cancellation
+      }
+    }
+  }, [state.summary?.sessionId]);
 
   return {
     ...state,

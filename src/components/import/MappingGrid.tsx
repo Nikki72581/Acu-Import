@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
-import { RotateCcw, Save, FolderOpen, Trash2 } from "lucide-react";
+import { RotateCcw, Save, FolderOpen, Trash2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MappingRow, DefaultValueRow } from "./MappingRow";
@@ -40,6 +40,9 @@ interface MappingGridProps {
   // Default values for unmapped required fields
   defaultValues: Record<string, string>;
   onDefaultValueChange: (apiName: string, value: string) => void;
+  // Schema refresh
+  onRefreshSchema?: () => void;
+  isRefreshingSchema?: boolean;
 }
 
 export function MappingGrid({
@@ -56,6 +59,8 @@ export function MappingGrid({
   isSavingTemplate,
   defaultValues,
   onDefaultValueChange,
+  onRefreshSchema,
+  isRefreshingSchema,
 }: MappingGridProps) {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
@@ -141,6 +146,22 @@ export function MappingGrid({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Refresh Schema */}
+          {onRefreshSchema && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={onRefreshSchema}
+              disabled={isRefreshingSchema}
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${isRefreshingSchema ? "animate-spin" : ""}`}
+              />
+              Refresh Schema
+            </Button>
+          )}
+
           {/* Load template */}
           {templates.length > 0 && (
             <Popover open={templateMenuOpen} onOpenChange={setTemplateMenuOpen}>
