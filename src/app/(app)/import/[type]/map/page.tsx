@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { WizardSteps } from "@/components/import/WizardSteps";
 import { MappingGrid } from "@/components/import/MappingGrid";
+import { ConnectionSelector } from "@/components/import/ConnectionSelector";
 import { useImportWizard } from "@/hooks/useImportWizard";
 import { useAutoMapping } from "@/hooks/useAutoMapping";
 import { slugToEntityType } from "@/lib/utils/entity-utils";
@@ -22,13 +23,19 @@ export default function MappingPage({
   const { type } = use(params);
   const router = useRouter();
   const entityType = slugToEntityType(type);
-  const { parsedFile } = useImportWizard();
+  const {
+    parsedFile,
+    setMappings: setWizardMappings,
+    setDefaultValues: setWizardDefaultValues,
+    setConnectionId,
+  } = useImportWizard();
 
   const [templates, setTemplates] = useState<MappingTemplate[]>([]);
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   const [defaultValues, setDefaultValues] = useState<Record<string, string>>(
     {}
   );
+  const [showConnectionSelector, setShowConnectionSelector] = useState(false);
 
   // Get entity config
   const config = entityType ? ENTITY_CONFIGS[entityType] : null;
@@ -166,6 +173,22 @@ export default function MappingPage({
     return allRequiredResolved && !hasDuplicates;
   }, [config, fields, mappings, defaultValues]);
 
+  const handleContinue = useCallback(() => {
+    // Persist mappings and default values to wizard context
+    setWizardMappings(mappings);
+    setWizardDefaultValues(defaultValues);
+    // Open connection selector
+    setShowConnectionSelector(true);
+  }, [mappings, defaultValues, setWizardMappings, setWizardDefaultValues]);
+
+  const handleConnectionSelected = useCallback(
+    (connectionId: string) => {
+      setConnectionId(connectionId);
+      router.push(`/import/${type}/preview`);
+    },
+    [setConnectionId, router, type]
+  );
+
   if (!entityType || !config) {
     return (
       <div className="flex flex-col items-center py-20">
@@ -228,6 +251,7 @@ export default function MappingPage({
         <Button
           disabled={!canContinue}
           className="gap-2"
+          onClick={handleContinue}
           title={
             canContinue
               ? "Continue to validation"
@@ -238,6 +262,12 @@ export default function MappingPage({
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
+
+      <ConnectionSelector
+        open={showConnectionSelector}
+        onOpenChange={setShowConnectionSelector}
+        onSelect={handleConnectionSelected}
+      />
     </div>
   );
 }

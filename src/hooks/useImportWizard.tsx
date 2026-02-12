@@ -20,6 +20,12 @@ interface ImportWizardState {
   setEntityType: (type: EntityType | null) => void;
   importMode: ImportMode | null;
   setImportMode: (mode: ImportMode | null) => void;
+  defaultValues: Record<string, string>;
+  setDefaultValues: (values: Record<string, string>) => void;
+  connectionId: string | null;
+  setConnectionId: (id: string | null) => void;
+  excludedRows: Set<number>;
+  setExcludedRows: (rows: Set<number> | ((prev: Set<number>) => Set<number>)) => void;
   reset: () => void;
 }
 
@@ -30,6 +36,19 @@ export function ImportWizardProvider({ children }: { children: ReactNode }) {
   const [mappings, setMappings] = useState<FieldMapping[]>([]);
   const [entityType, setEntityType] = useState<EntityType | null>(null);
   const [importMode, setImportMode] = useState<ImportMode | null>(null);
+  const [defaultValues, setDefaultValues] = useState<Record<string, string>>({});
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [excludedRows, setExcludedRowsState] = useState<Set<number>>(new Set());
+  const setExcludedRows = useCallback(
+    (rows: Set<number> | ((prev: Set<number>) => Set<number>)) => {
+      if (typeof rows === "function") {
+        setExcludedRowsState((prev) => rows(prev));
+      } else {
+        setExcludedRowsState(rows);
+      }
+    },
+    []
+  );
 
   const setParsedFile = useCallback((file: ParsedFile | null) => {
     setParsedFileState(file);
@@ -43,6 +62,9 @@ export function ImportWizardProvider({ children }: { children: ReactNode }) {
     setMappings([]);
     setEntityType(null);
     setImportMode(null);
+    setDefaultValues({});
+    setConnectionId(null);
+    setExcludedRowsState(new Set());
   }, []);
 
   return (
@@ -56,6 +78,12 @@ export function ImportWizardProvider({ children }: { children: ReactNode }) {
         setEntityType,
         importMode,
         setImportMode,
+        defaultValues,
+        setDefaultValues,
+        connectionId,
+        setConnectionId,
+        excludedRows,
+        setExcludedRows,
         reset,
       }}
     >
