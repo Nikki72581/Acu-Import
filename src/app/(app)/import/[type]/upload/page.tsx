@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -9,6 +9,7 @@ import { WizardSteps } from "@/components/import/WizardSteps";
 import { FileDropzone } from "@/components/import/FileDropzone";
 import { FilePreview } from "@/components/import/FilePreview";
 import { useFileParser } from "@/hooks/useFileParser";
+import { useImportWizard } from "@/hooks/useImportWizard";
 import { slugToEntityType, isValidImportMode } from "@/lib/utils/entity-utils";
 import { ENTITY_CONFIGS } from "@/types/entities";
 
@@ -24,8 +25,24 @@ export default function UploadPage({
   const entityType = slugToEntityType(type);
   const validMode = isValidImportMode(mode);
 
-  const { parsedFile, isLoading, error, parseFile, selectSheet, reset } =
+  const { parsedFile, isLoading, error, parseFile, selectSheet } =
     useFileParser();
+
+  const { setParsedFile, setEntityType, setImportMode } = useImportWizard();
+
+  // Sync parsed file to wizard context
+  useEffect(() => {
+    setParsedFile(parsedFile);
+  }, [parsedFile, setParsedFile]);
+
+  // Sync entity type and import mode to wizard context
+  useEffect(() => {
+    if (entityType) setEntityType(entityType);
+  }, [entityType, setEntityType]);
+
+  useEffect(() => {
+    if (validMode) setImportMode(mode as "create" | "create_or_update" | "update");
+  }, [validMode, mode, setImportMode]);
 
   if (!entityType) {
     return (
@@ -94,13 +111,11 @@ export default function UploadPage({
         </Button>
 
         {parsedFile && (
-          <Button
-            disabled
-            className="gap-2"
-            title="Mapping will be available in Phase 2"
-          >
-            Continue to Mapping
-            <ArrowRight className="h-4 w-4" />
+          <Button asChild className="gap-2">
+            <Link href={`/import/${type}/map?mode=${mode}`}>
+              Continue to Mapping
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </Button>
         )}
       </div>
